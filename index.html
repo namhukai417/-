@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>UOS Water Positive — 3D Campus Simulator</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; font-family: -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif; background: #0F2942; color: #E2E8F0; }
+  #canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: grab; }
+  #canvas:active { cursor: grabbing; }
+
+  /* 좌상 — 헤더 */
+  .header {
+    position: absolute; top: 0; left: 0; right: 0; padding: 16px 20px;
+    background: linear-gradient(180deg, rgba(15,41,66,0.95) 0%, rgba(15,41,66,0.7) 70%, rgba(15,41,66,0) 100%);
+    pointer-events: none; z-index: 10;
+  }
+  .header h1 { font-size: 18px; color: #fff; font-weight: 700; }
+  .header .sub { font-size: 11px; color: #02C39A; letter-spacing: 2px; margin-top: 4px; }
+
+  /* 좌하 — KPI 패널 */
+  .kpi {
+    position: absolute; left: 20px; bottom: 20px;
+    background: rgba(15,41,66,0.92); border: 1px solid #1C7293; border-radius: 8px;
+    padding: 16px 20px; min-width: 280px; backdrop-filter: blur(8px);
+    z-index: 10;
+  }
+  .kpi .label { font-size: 10px; color: #94A3B8; letter-spacing: 2px; }
+  .kpi .scenario-name { font-size: 13px; color: #02C39A; font-weight: 700; margin-top: 4px; }
+  .kpi .rate { font-size: 56px; color: #fff; font-weight: 800; line-height: 1; margin-top: 8px; }
+  .kpi .rate .pct { font-size: 28px; color: #02C39A; }
+  .kpi .replenish { font-size: 11px; color: #CBD5E1; margin-top: 8px; }
+  /* 환원량 대형 표시 */
+  .kpi .repvol-block { margin-top: 12px; padding: 10px 12px; background: rgba(2,195,154,0.10); border: 1px solid #02C39A; border-radius: 6px; }
+  .kpi .repvol-label { font-size: 10px; color: #02C39A; letter-spacing: 1.5px; }
+  .kpi .repvol-value { font-size: 30px; color: #fff; font-weight: 800; line-height: 1.1; margin-top: 2px; }
+  .kpi .repvol-value .unit { font-size: 14px; color: #94A3B8; font-weight: 400; margin-left: 4px; }
+  .kpi .repvol-sub { font-size: 10px; color: #94A3B8; margin-top: 2px; }
+  /* 환원량 항목 분해 스택드 바 */
+  .kpi-bar { display: flex; height: 22px; border-radius: 4px; overflow: hidden; margin-top: 8px; border: 1px solid #1C7293; font-size: 10px; }
+  .kpi-bar .seg { display: flex; align-items: center; justify-content: center; color: #0F2942; font-weight: 700; transition: flex 0.5s ease; min-width: 0; overflow: hidden; white-space: nowrap; }
+  .kpi-bar .seg.lid  { background: #6BC6A6; }
+  .kpi-bar .seg.mid  { background: #4FB0D8; }
+  .kpi-bar .seg.rain { background: #88C0EF; }
+  .kpi-bar .seg.nbs  { background: #FFD166; }
+  .kpi-bar-legend { display: flex; gap: 10px; font-size: 9px; color: #94A3B8; margin-top: 4px; flex-wrap: wrap; }
+  .kpi-bar-legend .dot { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 3px; vertical-align: middle; }
+
+  /* 우측 — 시나리오 토글 + 범례 */
+  .panel {
+    position: absolute; top: 80px; right: 20px;
+    background: rgba(15,41,66,0.92); border: 1px solid #1C7293; border-radius: 8px;
+    padding: 16px 18px; width: 240px; backdrop-filter: blur(8px);
+    z-index: 10;
+  }
+  .panel h3 { font-size: 11px; color: #02C39A; letter-spacing: 2px; margin-bottom: 10px; }
+  .scenarios { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+  .scenarios button {
+    padding: 8px 10px; background: rgba(255,255,255,0.05); color: #CBD5E1;
+    border: 1px solid #1C7293; border-radius: 4px; cursor: pointer;
+    font-size: 11px; font-weight: 600; transition: all .15s;
+    text-align: left;
+  }
+  .scenarios button:hover { background: rgba(2,195,154,0.15); color: #fff; }
+  .scenarios button.active {
+    background: #02C39A; color: #0F2942; border-color: #02C39A;
+  }
+  .scenarios button .pct { float: right; opacity: 0.85; }
+
+  .legend { margin-top: 16px; }
+  .legend h3 { margin-bottom: 8px; }
+  .gradient-bar {
+    height: 14px; border-radius: 3px;
+    background: linear-gradient(90deg, #475569 0%, #1C7293 25%, #02C39A 50%, #047857 75%, #FFD166 100%);
+  }
+  .legend-labels { display: flex; justify-content: space-between; font-size: 9px; color: #94A3B8; margin-top: 4px; }
+
+  .help { margin-top: 16px; padding-top: 12px; border-top: 1px solid #1C7293; font-size: 10px; color: #94A3B8; line-height: 1.6; }
+  .help b { color: #02C39A; }
+
+  /* TOP 5 환원량 랭킹 */
+  .top5 { margin-top: 16px; padding-top: 12px; border-top: 1px solid #1C7293; }
+  .top5 h3 { font-size: 11px; color: #FFD166; letter-spacing: 1.5px; margin-bottom: 8px; }
+  .top5-item { display: flex; align-items: center; padding: 5px 4px; font-size: 11px; cursor: pointer; gap: 8px; border-radius: 3px; transition: background .15s; }
+  .top5-item:hover { background: rgba(2,195,154,0.18); }
+  .top5-rank { width: 16px; color: #FFD166; font-weight: 800; text-align: center; }
+  .top5-name { flex: 1; color: #E2E8F0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .top5-bar { width: 50px; height: 5px; background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden; flex-shrink: 0; }
+  .top5-bar-fill { height: 100%; background: linear-gradient(90deg, #02C39A, #FFD166); transition: width 0.4s ease; }
+  .top5-val { color: #FFD166; font-weight: 700; min-width: 56px; text-align: right; font-size: 10px; font-variant-numeric: tabular-nums; }
+
+  /* 클릭 팝업 */
+  .popup {
+    position: absolute; background: #fff; color: #0F2942;
+    border-radius: 8px; padding: 16px 18px; min-width: 280px; max-width: 340px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    pointer-events: auto; z-index: 100; display: none;
+  }
+  .popup .close { position: absolute; top: 6px; right: 10px; font-size: 18px; cursor: pointer; color: #94A3B8; }
+  .popup .close:hover { color: #0F2942; }
+  .popup .name { font-size: 16px; font-weight: 700; color: #065A82; }
+  .popup .meta { font-size: 11px; color: #64748B; margin-top: 2px; }
+  .popup .row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 12px; border-bottom: 1px solid #E2E8F0; }
+  .popup .row:last-child { border-bottom: none; }
+  .popup .row .v { font-weight: 700; color: #0F2942; }
+  .popup .rate-big {
+    margin-top: 10px; padding: 10px; border-radius: 6px;
+    background: linear-gradient(90deg, #02C39A22, #02C39A11);
+    border: 1px solid #02C39A;
+    text-align: center;
+  }
+  .popup .rate-big .lbl { font-size: 10px; color: #064E3B; letter-spacing: 1.5px; }
+  .popup .rate-big .val { font-size: 28px; font-weight: 800; color: #047857; margin-top: 2px; }
+  .popup .parts {
+    margin-top: 10px; padding: 8px; background: #F1F5F9; border-radius: 4px;
+    font-size: 10.5px; color: #475569; line-height: 1.7;
+  }
+  .popup .parts b { color: #065A82; }
+
+  /* 호버 툴팁 */
+  .tooltip {
+    position: absolute; background: rgba(15,41,66,0.95); color: #fff;
+    padding: 6px 10px; border-radius: 4px; font-size: 11px; pointer-events: none;
+    border: 1px solid #02C39A; display: none; z-index: 50;
+  }
+
+  .credits {
+    position: absolute; bottom: 6px; right: 14px;
+    font-size: 10px; color: #94A3B8; pointer-events: none; z-index: 5;
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+
+<div class="header">
+  <h1>서울시립대학교 캠퍼스 — Water Positive 디지털 트윈</h1>
+  <div class="sub">3D BUILDING SIMULATOR · CAMPUS REPLENISHMENT VIEWER</div>
+</div>
+
+<div class="kpi">
+  <div class="label">SELECTED SCENARIO</div>
+  <div class="scenario-name" id="kpi-scen-name">S4 통합 (기본 NbS)</div>
+  <div class="rate"><span id="kpi-rate">32.33</span><span class="pct"> %</span></div>
+  <div class="replenish">사용량 552,808 m³ / 년 기준</div>
+  <div class="repvol-block">
+    <div class="repvol-label">ANNUAL REPLENISHMENT · 환원량</div>
+    <div class="repvol-value"><span id="kpi-replenish">178,703</span><span class="unit">m³ / 년</span></div>
+    <div class="repvol-sub" id="kpi-repvol-sub">상수 사용량 대비 환원 비율</div>
+    <div class="kpi-bar" id="kpi-bar"></div>
+    <div class="kpi-bar-legend">
+      <span><span class="dot" style="background:#6BC6A6"></span>LID</span>
+      <span><span class="dot" style="background:#4FB0D8"></span>중수도</span>
+      <span><span class="dot" style="background:#88C0EF"></span>빗물</span>
+      <span><span class="dot" style="background:#FFD166"></span>NbS</span>
+    </div>
+  </div>
+  <div class="parts" id="kpi-parts"></div>
+</div>
+
+<div class="panel">
+  <h3>SCENARIO TOGGLE</h3>
+  <div class="scenarios" id="scenarios"></div>
+
+  <div class="legend">
+    <h3>RATE COLORMAP (환원율)</h3>
+    <div class="gradient-bar"></div>
+    <div class="legend-labels">
+      <span>0%</span><span>30%</span><span>60%</span><span>100%+</span>
+    </div>
+  </div>
+
+  <div class="top5">
+    <h3>🏆 TOP 5 환원량 (m³/년)</h3>
+    <div id="top5-list"></div>
+  </div>
+
+  <div class="help">
+    <b>좌클릭</b> 회전 / <b>휠</b> 줌 / <b>우클릭</b> 이동<br>
+    <b>건물·랭킹 클릭</b> → 사용량·환원량 팝업<br>
+    <b>물기둥 높이</b> = 연 환원량 (m³/년)
+  </div>
+</div>
+
+<div class="popup" id="popup">
+  <span class="close" onclick="event.stopPropagation(); document.getElementById('popup').style.display='none'">×</span>
+  <div class="name" id="p-name"></div>
+  <div class="meta" id="p-meta"></div>
+  <div class="rate-big">
+    <div class="lbl">환원율 (이 시나리오)</div>
+    <div class="val"><span id="p-rate"></span> %</div>
+  </div>
+  <div style="margin-top:10px;">
+    <div class="row"><span>연간 사용량</span><span class="v" id="p-usage"></span></div>
+    <div class="row"><span>연간 환원량</span><span class="v" id="p-replenish"></span></div>
+    <div class="row"><span>연면적</span><span class="v" id="p-area"></span></div>
+    <div class="row"><span>지상 / 지하층</span><span class="v" id="p-floors"></span></div>
+  </div>
+  <div class="tenants" id="p-tenants" style="margin-top:10px; font-size:11px; color:#475569;"></div>
+  <div class="parts" id="p-parts"></div>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+<div class="credits">1조 이루매의 물단속 · 종설 개념설계 결과물</div>
+
+<script src="lib/three.min.js"></script>
+<script src="lib/OrbitControls.js"></script>
+<script src="data.js"></script>
+<script src="roads.js"></script>
+<script src="lake.js"></script>
+<script>
+let DATA = window.DATA;
+let CURRENT_SCEN = 'S4';  // 본문 핵심값(통합 + 기본 NbS, 32.33%)
+const SCEN_LABELS = {
+  S0: 'S0 현황',
+  S1: 'S1 LID-only',
+  S2: 'S2 재이용 단독',
+  S3: 'S3 통합 (NbS 미산입)',
+  S4: 'S4 통합 (기본 NbS)',
+  S5: 'S5 +NbS 강화 10%',
+  S6: 'S6 +NbS 강화 20%',
+  S7: 'S7 +NbS 최대 (30%)',
+};
+
+// ───── 색상 매핑 (환원율 0~100%+) ─────
+// 0% slate → 30% mint → 60% deep green → 100%+ gold
+const COLOR_STOPS = [
+  { t: 0.0,  c: [0x47, 0x55, 0x69] },  // slate 475569
+  { t: 0.15, c: [0x1C, 0x72, 0x93] },  // teal  1C7293
+  { t: 0.30, c: [0x02, 0xC3, 0x9A] },  // mint  02C39A
+  { t: 0.60, c: [0x04, 0x78, 0x57] },  // deep green 047857
+  { t: 1.00, c: [0xFF, 0xD1, 0x66] },  // gold  FFD166
+];
+function mapColor(rate) {
+  // rate 0~100+. clamp to 0~1 (100% = full)
+  const t = Math.min(rate / 100, 1.0);
+  for (let i = 0; i < COLOR_STOPS.length - 1; i++) {
+    const a = COLOR_STOPS[i], b = COLOR_STOPS[i+1];
+    if (t >= a.t && t <= b.t) {
+      const k = (t - a.t) / (b.t - a.t);
+      const r = Math.round(a.c[0] + (b.c[0]-a.c[0])*k);
+      const g = Math.round(a.c[1] + (b.c[1]-a.c[1])*k);
+      const bl = Math.round(a.c[2] + (b.c[2]-a.c[2])*k);
+      return (r << 16) | (g << 8) | bl;
+    }
+  }
+  return 0xFFD166;
+}
+
+// ───── Three.js 초기화 ─────
+const canvas = document.getElementById('canvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0xCFE9FF);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0xE8F4FF, 350, 800);
+
+// ───── 하늘박스 (반구 그라데이션) ─────
+const skyGeo = new THREE.SphereGeometry(1200, 32, 16);
+const skyMat = new THREE.ShaderMaterial({
+  uniforms: {
+    topColor:    { value: new THREE.Color(0x6BB8E8) },  // 윗부분 - 진한 하늘
+    bottomColor: { value: new THREE.Color(0xE8F4FF) },  // 지평선 - 옅은 하늘
+    offset:      { value: 33 },
+    exponent:    { value: 0.7 },
+  },
+  vertexShader: `
+    varying vec3 vWorldPosition;
+    void main() {
+      vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+      vWorldPosition = worldPosition.xyz;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }`,
+  fragmentShader: `
+    uniform vec3 topColor;
+    uniform vec3 bottomColor;
+    uniform float offset;
+    uniform float exponent;
+    varying vec3 vWorldPosition;
+    void main() {
+      float h = normalize(vWorldPosition + offset).y;
+      gl_FragColor = vec4(mix(bottomColor, topColor, max(pow(max(h, 0.0), exponent), 0.0)), 1.0);
+    }`,
+  side: THREE.BackSide,
+});
+scene.add(new THREE.Mesh(skyGeo, skyMat));
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.1, 2500);
+camera.position.set(0, 220, 260);
+camera.lookAt(0, 0, 0);
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 60;
+controls.maxDistance = 600;
+controls.maxPolarAngle = Math.PI * 0.49;
+
+// 조명 — 오후 햇살 + 부드러운 천공광
+scene.add(new THREE.HemisphereLight(0xBFE0FF, 0xE8E0CC, 0.45));
+const sun = new THREE.DirectionalLight(0xFFF1D6, 1.15);
+sun.position.set(110, 180, 70);
+sun.castShadow = true;
+sun.shadow.mapSize.set(4096, 4096);
+sun.shadow.camera.left = -180; sun.shadow.camera.right = 180;
+sun.shadow.camera.top = 130; sun.shadow.camera.bottom = -130;
+sun.shadow.camera.near = 1;
+sun.shadow.camera.far = 500;
+sun.shadow.bias = -0.0003;
+sun.shadow.normalBias = 0.02;
+sun.shadow.radius = 2;
+scene.add(sun);
+// 보조 채움광 (반대편 그림자가 너무 검어지지 않게)
+const fill = new THREE.DirectionalLight(0xA8C8FF, 0.25);
+fill.position.set(-60, 80, -40);
+scene.add(fill);
+
+// ───── 고품질 절차적 잔디+흙 텍스처 (Perlin 기반 fBM + Normal map) ─────
+function makeValueNoise2D(seed) {
+  const hash = (xi, yi) => {
+    let h = Math.imul(xi | 0, 374761393) ^ Math.imul(yi | 0, 668265263) ^ seed;
+    h = Math.imul(h ^ (h >>> 13), 1274126177);
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
+  };
+  const smooth = t => t * t * (3 - 2 * t);
+  return (x, y) => {
+    const xi = Math.floor(x), yi = Math.floor(y);
+    const xf = x - xi, yf = y - yi;
+    const sx = smooth(xf), sy = smooth(yf);
+    const v00 = hash(xi, yi), v10 = hash(xi + 1, yi);
+    const v01 = hash(xi, yi + 1), v11 = hash(xi + 1, yi + 1);
+    const a = v00 + (v10 - v00) * sx;
+    const b = v01 + (v11 - v01) * sx;
+    return a + (b - a) * sy;
+  };
+}
+function fbm(noise, x, y, octaves) {
+  let sum = 0, amp = 1, freq = 1, norm = 0;
+  for (let i = 0; i < octaves; i++) {
+    sum += amp * noise(x * freq, y * freq);
+    norm += amp; amp *= 0.5; freq *= 2;
+  }
+  return sum / norm;
+}
+
+function makeGroundTextureHQ(W = 768) {
+  const n1 = makeValueNoise2D(101);   // 큰 풀 영역 / 색 분포
+  const n2 = makeValueNoise2D(202);   // 흙 패치 / 미세 디테일
+  const n3 = makeValueNoise2D(303);   // 마른 풀 / 이끼 점
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+  // 자연 톤 팔레트 (RGB) — 캠퍼스 잔디밭 분위기
+  const C = {
+    grassDark:  [78, 102, 56],
+    grassMid:   [108, 138, 73],
+    grassLight: [142, 170, 96],
+    grassWarm:  [168, 178, 102],
+    dryGrass:   [180, 168, 108],
+    dirtDark:   [88, 68, 46],
+    dirtLight:  [142, 112, 78],
+    moss:       [82, 116, 64],
+  };
+
+  const albedoC = document.createElement('canvas');
+  albedoC.width = albedoC.height = W;
+  const aCtx = albedoC.getContext('2d');
+  const aImg = aCtx.createImageData(W, W);
+  const aData = aImg.data;
+
+  const normalC = document.createElement('canvas');
+  normalC.width = normalC.height = W;
+  const nCtx = normalC.getContext('2d');
+  const nImg = nCtx.createImageData(W, W);
+  const nData = nImg.data;
+
+  // 1) Heightmap 사전 계산 (Normal 생성용)
+  const Hmap = new Float32Array(W * W);
+  for (let y = 0; y < W; y++) {
+    for (let x = 0; x < W; x++) {
+      const u = x / W, v = y / W;
+      const macro = fbm(n1, u * 4, v * 4, 3);
+      const detail = fbm(n2, u * 28, v * 28, 3);
+      Hmap[y * W + x] = macro * 0.6 + detail * 0.4;
+    }
+  }
+
+  // 2) Albedo + Normal 생성
+  for (let y = 0; y < W; y++) {
+    for (let x = 0; x < W; x++) {
+      const idx = (y * W + x) * 4;
+      const u = x / W, v = y / W;
+
+      const region    = fbm(n1, u * 3, v * 3, 3);              // 큰 색 영역
+      const dirtMask  = fbm(n2, u * 4.5 + 100, v * 4.5, 3);    // 흙 패치
+      const dryMask   = fbm(n3, u * 5 - 50, v * 5 + 30, 2);    // 마른 풀
+      const mossSpot  = fbm(n3, u * 14 + 200, v * 14, 2);      // 이끼 점
+      const micro     = fbm(n2, u * 26, v * 26, 2);            // 미세 변이
+
+      // (a) 풀 베이스: 어두운 → 중간 → 밝은
+      const tg = clamp((region - 0.35) * 2.0, 0, 1);
+      let r, g, b;
+      if (tg < 0.5) {
+        const k = tg * 2;
+        r = lerp(C.grassDark[0], C.grassMid[0], k);
+        g = lerp(C.grassDark[1], C.grassMid[1], k);
+        b = lerp(C.grassDark[2], C.grassMid[2], k);
+      } else {
+        const k = (tg - 0.5) * 2;
+        r = lerp(C.grassMid[0], C.grassLight[0], k);
+        g = lerp(C.grassMid[1], C.grassLight[1], k);
+        b = lerp(C.grassMid[2], C.grassLight[2], k);
+      }
+
+      // (b) 햇살 받은 누런 잔디 highlight (micro 노이즈)
+      const warmMix = clamp((micro - 0.58) * 3, 0, 0.35);
+      r = lerp(r, C.grassWarm[0], warmMix);
+      g = lerp(g, C.grassWarm[1], warmMix);
+      b = lerp(b, C.grassWarm[2], warmMix);
+
+      // (c) 이끼 점박이
+      const mossMix = clamp((mossSpot - 0.65) * 5, 0, 0.55);
+      r = lerp(r, C.moss[0], mossMix);
+      g = lerp(g, C.moss[1], mossMix);
+      b = lerp(b, C.moss[2], mossMix);
+
+      // (d) 마른 풀 (드물게)
+      const dryMix = clamp((dryMask - 0.62) * 3, 0, 0.4);
+      r = lerp(r, C.dryGrass[0], dryMix);
+      g = lerp(g, C.dryGrass[1], dryMix);
+      b = lerp(b, C.dryGrass[2], dryMix);
+
+      // (e) 흙 패치 (가장 강함, 위에 덮음)
+      const dirtAmt = clamp((dirtMask - 0.6) * 3.5, 0, 1);
+      const dirtVar = clamp(micro * 1.4 - 0.2, 0, 1);
+      const dr = lerp(C.dirtDark[0], C.dirtLight[0], dirtVar);
+      const dg = lerp(C.dirtDark[1], C.dirtLight[1], dirtVar);
+      const db = lerp(C.dirtDark[2], C.dirtLight[2], dirtVar);
+      r = lerp(r, dr, dirtAmt);
+      g = lerp(g, dg, dirtAmt);
+      b = lerp(b, db, dirtAmt);
+
+      // (f) 미세 디더 (포토 그레인)
+      const speckle = (Math.random() - 0.5) * 10;
+      r = clamp(r + speckle, 0, 255);
+      g = clamp(g + speckle, 0, 255);
+      b = clamp(b + speckle, 0, 255);
+
+      aData[idx]     = r;
+      aData[idx + 1] = g;
+      aData[idx + 2] = b;
+      aData[idx + 3] = 255;
+
+      // Normal map: 인접 height 미분 (Sobel-like)
+      const xL = (x - 1 + W) % W, xR = (x + 1) % W;
+      const yU = (y - 1 + W) % W, yD = (y + 1) % W;
+      const dHx = Hmap[y * W + xR] - Hmap[y * W + xL];
+      const dHy = Hmap[yD * W + x] - Hmap[yU * W + x];
+      const strength = 6.0;
+      let nx = -dHx * strength, ny = -dHy * strength, nz = 1.0;
+      const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
+      nx /= len; ny /= len; nz /= len;
+      nData[idx]     = Math.round((nx * 0.5 + 0.5) * 255);
+      nData[idx + 1] = Math.round((ny * 0.5 + 0.5) * 255);
+      nData[idx + 2] = Math.round((nz * 0.5 + 0.5) * 255);
+      nData[idx + 3] = 255;
+    }
+  }
+
+  aCtx.putImageData(aImg, 0, 0);
+  nCtx.putImageData(nImg, 0, 0);
+
+  const maxAniso = renderer.capabilities.getMaxAnisotropy();
+  const aTex = new THREE.CanvasTexture(albedoC);
+  aTex.wrapS = aTex.wrapT = THREE.RepeatWrapping;
+  aTex.repeat.set(1.6, 1.0);
+  aTex.anisotropy = maxAniso;
+
+  const nTex = new THREE.CanvasTexture(normalC);
+  nTex.wrapS = nTex.wrapT = THREE.RepeatWrapping;
+  nTex.repeat.set(1.6, 1.0);
+  nTex.anisotropy = maxAniso;
+
+  return { albedo: aTex, normal: nTex };
+}
+
+const groundTex = makeGroundTextureHQ(768);
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(340, 210),
+  new THREE.MeshStandardMaterial({
+    map: groundTex.albedo,
+    normalMap: groundTex.normal,
+    normalScale: new THREE.Vector2(0.75, 0.75),
+    roughness: 0.92,
+    metalness: 0,
+  })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// 그리드 라인 (옅게 — 텍스처 위에 미세하게)
+const grid = new THREE.GridHelper(340, 34, 0x000000, 0x000000);
+grid.material.opacity = 0.06;
+grid.material.transparent = true;
+grid.position.y = 0.02;
+scene.add(grid);
+
+// ───── 그라운드 오버레이 헬퍼 (도로·하늘못 등) ─────
+function addGroundOverlay(dataUrl, y, opts = {}) {
+  if (!dataUrl) return;
+  const im = new Image();
+  im.onload = () => {
+    const tex = new THREE.Texture(im);
+    tex.needsUpdate = true;
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex,
+      transparent: true,
+      alphaTest: opts.alphaTest || 0.3,
+      depthWrite: false,
+      opacity: opts.opacity || 1.0,
+    });
+    const plane = new THREE.Mesh(new THREE.PlaneGeometry(340, 210), mat);
+    plane.rotation.x = -Math.PI / 2;
+    plane.position.y = y;
+    scene.add(plane);
+  };
+  im.src = dataUrl;
+}
+addGroundOverlay(window.ROAD_TEX_DATA, 0.05);
+addGroundOverlay(window.LAKE_TEX_DATA, 0.07, { alphaTest: 0.2 });
+
+// ───── 구름 (sphere puff) ─────
+function makeCloud(scale = 1) {
+  const group = new THREE.Group();
+  const mat = new THREE.MeshLambertMaterial({ color: 0xFFFFFF, transparent: true, opacity: 0.92 });
+  const puffs = 5 + Math.floor(Math.random()*4);
+  for (let i = 0; i < puffs; i++) {
+    const r = (3 + Math.random()*5) * scale;
+    const g = new THREE.SphereGeometry(r, 12, 8);
+    g.scale(1, 0.55, 1);
+    const m = new THREE.Mesh(g, mat);
+    m.position.set((Math.random()-0.5)*14*scale, (Math.random()-0.5)*3*scale, (Math.random()-0.5)*6*scale);
+    group.add(m);
+  }
+  return group;
+}
+const clouds = [];
+// 캠퍼스 부지(±170 x ±105) 바깥의 링 영역에만 구름 배치 → 시야 방해 제거
+for (let i = 0; i < 18; i++) {
+  const cloud = makeCloud(1.4 + Math.random()*2.0);
+  // 링 영역: 반지름 360 ~ 620, 임의 각도
+  const ang = Math.random() * Math.PI * 2;
+  const ringR = 360 + Math.random() * 260;
+  const px = Math.cos(ang) * ringR;
+  const pz = Math.sin(ang) * ringR * 0.75;  // z 방향은 조금 좁게
+  cloud.position.set(px, 180 + Math.random()*80, pz);
+  cloud.userData.drift = 0.02 + Math.random()*0.04;
+  scene.add(cloud);
+  clouds.push(cloud);
+}
+
+// 북측 표식 (진한 청록)
+const NORTH_GEO = new THREE.RingGeometry(0, 3.5, 3);
+const NORTH = new THREE.Mesh(NORTH_GEO, new THREE.MeshBasicMaterial({ color: 0x065A82 }));
+NORTH.rotation.x = -Math.PI/2;
+NORTH.position.set(-155, 0.05, -90);
+scene.add(NORTH);
+
+// ───── 건물 박스 그룹 ─────
+const buildingGroup = new THREE.Group();
+scene.add(buildingGroup);
+
+// ───── 환원량 시각화: 물기둥(Water Column) ─────
+const waterColumns = [];
+const COL_RADIUS = 2.2;
+const COL_HMAX   = 65;     // 시각화 최대 높이(m, 가장 큰 환원량 건물 기준)
+const REP_NORM   = 12000;  // 건물 단위 정규화 기준치 (~최대 환원량)
+function makeWaterColumn() {
+  const geo = new THREE.CylinderGeometry(COL_RADIUS, COL_RADIUS, 1, 20, 1, false);
+  geo.translate(0, 0.5, 0);  // 베이스가 y=0
+  const mat = new THREE.MeshPhongMaterial({
+    color: 0x6BD0F8,
+    transparent: true, opacity: 0.55,
+    emissive: 0x2090C0, emissiveIntensity: 0.35,
+    shininess: 80,
+  });
+  const m = new THREE.Mesh(geo, mat);
+  m.scale.y = 0.001;
+  m.userData = { targetH: 0, currentH: 0 };
+  return m;
+}
+
+// raycaster
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let hovered = null;
+
+// ───── 데이터 로드 후 빌드 (data.js 의 window.DATA 사용 → file:// 직접 실행 가능) ─────
+buildScene();
+buildScenarioButtons();
+updateScenario(CURRENT_SCEN);
+
+function buildScene() {
+  // 공식 캠퍼스맵 기반 폴리곤 + 층수 반영
+  // b.pos: [norm_x, norm_y] 중심점,  b.polygon: [[lx,lz], ...] 로컬 좌표 (월드 단위)
+  // b.floors: 지상 층수
+  const SCALE_X = 277;  // 부지 3배 (√3 × 160)
+  const SCALE_Z = 164;  // 부지 3배 (√3 × 95)
+  const FLOOR_H = 2.5;  // 층고 (m)
+
+  // 단일 sub-section 또는 전체 건물 mesh 생성 (subBuildings 케이스 통합)
+  function makeMesh(polygon, baseX, baseZ, height) {
+    const shape = new THREE.Shape();
+    shape.moveTo(polygon[0][0], -polygon[0][1]);
+    for (let i = 1; i < polygon.length; i++) shape.lineTo(polygon[i][0], -polygon[i][1]);
+    shape.closePath();
+    const geom = new THREE.ExtrudeGeometry(shape, { depth: height, bevelEnabled: false });
+    geom.rotateX(-Math.PI / 2);
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0x475569, roughness: 0.55, metalness: 0.1,
+      emissive: 0x000000, emissiveIntensity: 0,
+    });
+    const mesh = new THREE.Mesh(geom, mat);
+    mesh.position.set(baseX, 0, baseZ);
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    return mesh;
+  }
+
+  DATA.buildings.forEach(b => {
+    const [nx, ny] = b.pos;
+    const x = (nx - 0.5) * SCALE_X;
+    const z = (ny - 0.5) * SCALE_Z;
+    const floors = b.floors || 1;
+    const H = Math.max(2.5, floors * FLOOR_H);
+
+    let topY = H;
+    if (b.subBuildings && b.subBuildings.length) {
+      // 다동 구조 (예: 100주년기념관 가/나/다)
+      let maxH = 0;
+      b.subBuildings.forEach(sub => {
+        const subH = Math.max(2.5, (sub.floors || 1) * FLOOR_H);
+        const subX = x + (sub.offset ? sub.offset[0] : 0);
+        const subZ = z + (sub.offset ? sub.offset[1] : 0);
+        const mesh = makeMesh(sub.polygon, subX, subZ, subH);
+        mesh.userData = { building: b, baseColor: 0x475569, subName: sub.name };
+        buildingGroup.add(mesh);
+        if (subH > maxH) maxH = subH;
+      });
+      const labelGeo = new THREE.CircleGeometry(0.7, 16);
+      const label = new THREE.Mesh(labelGeo, new THREE.MeshBasicMaterial({ color: 0x0F2942 }));
+      label.rotation.x = -Math.PI/2;
+      label.position.set(x, maxH + 0.1, z);
+      scene.add(label);
+      topY = maxH;
+    } else {
+      // 일반 단일 건물
+      const polygon = b.polygon || [[-3,-3],[3,-3],[3,3],[-3,3]];
+      const mesh = makeMesh(polygon, x, z, H);
+      mesh.userData = { building: b, baseColor: 0x475569 };
+      buildingGroup.add(mesh);
+
+      const labelGeo = new THREE.CircleGeometry(0.7, 16);
+      const label = new THREE.Mesh(labelGeo, new THREE.MeshBasicMaterial({ color: 0x0F2942 }));
+      label.rotation.x = -Math.PI/2;
+      label.position.set(x, H + 0.1, z);
+      scene.add(label);
+      topY = H;
+    }
+
+    // 환원량 물기둥(Water Column) — 건물 옥상 위 정중앙
+    const col = makeWaterColumn();
+    col.position.set(x, topY + 0.05, z);
+    col.userData.building = b;
+    waterColumns.push(col);
+    scene.add(col);
+  });
+}
+
+function buildScenarioButtons() {
+  const container = document.getElementById('scenarios');
+  Object.keys(SCEN_LABELS).forEach(sname => {
+    const btn = document.createElement('button');
+    btn.dataset.scen = sname;
+    const cs = DATA.campus.SCENARIOS[sname];
+    btn.innerHTML = `${sname} <span class="pct">${cs.rate}%</span>`;
+    btn.onclick = () => updateScenario(sname);
+    container.appendChild(btn);
+  });
+}
+
+function updateScenario(sname) {
+  CURRENT_SCEN = sname;
+  // 버튼 활성 상태
+  document.querySelectorAll('#scenarios button').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.scen === sname);
+  });
+  // KPI 업데이트
+  const cs = DATA.campus.SCENARIOS[sname];
+  document.getElementById('kpi-scen-name').textContent = SCEN_LABELS[sname];
+  document.getElementById('kpi-rate').textContent = cs.rate.toFixed(2);
+  document.getElementById('kpi-replenish').textContent = cs.replenish.toLocaleString();
+  const p = cs.parts;
+  document.getElementById('kpi-parts').innerHTML =
+    `LID <span>${p.LID.toLocaleString()}</span> &nbsp;|&nbsp; ` +
+    `중수도 <span>${p.MID.toLocaleString()}</span><br>` +
+    `빗물 <span>${p.RAIN.toLocaleString()}</span> &nbsp;|&nbsp; ` +
+    `NbS <span>${p.NBS.toLocaleString()}</span>`;
+  // 건물 색상 갱신
+  buildingGroup.children.forEach(mesh => {
+    const b = mesh.userData.building;
+    const rate = b.scenarios[sname].rate;
+    const color = mapColor(rate);
+    mesh.material.color.setHex(color);
+    mesh.userData.baseColor = color;
+    // 환원율이 100% 이상이면 약간의 emissive (Net Positive 강조)
+    if (rate >= 100) {
+      mesh.material.emissive.setHex(0xFFD166);
+      mesh.material.emissiveIntensity = 0.18;
+    } else if (rate >= 60) {
+      mesh.material.emissive.setHex(0x047857);
+      mesh.material.emissiveIntensity = 0.08;
+    } else {
+      mesh.material.emissive.setHex(0x000000);
+      mesh.material.emissiveIntensity = 0;
+    }
+  });
+
+  // 환원량 물기둥 타깃 높이 갱신 (animate 루프가 lerp)
+  waterColumns.forEach(col => {
+    const b = col.userData.building;
+    const rep = b.scenarios[sname].replenish;
+    col.userData.targetH = Math.min(COL_HMAX, (rep / REP_NORM) * COL_HMAX);
+    // 환원량 0이면 기둥 숨김
+    col.visible = rep > 0;
+  });
+
+  // KPI 환원량 분해 스택드 바 + TOP 5 갱신
+  updateKpiBar(p);
+  updateTop5();
+}
+
+// ───── 환원량 분해 스택드 바 ─────
+function updateKpiBar(parts) {
+  const total = parts.LID + parts.MID + parts.RAIN + parts.NBS;
+  const bar = document.getElementById('kpi-bar');
+  if (!total) {
+    bar.innerHTML = '<div class="seg" style="flex:1;background:rgba(255,255,255,0.04);color:#94A3B8;font-weight:400">환원량 0 (현황 시나리오)</div>';
+    return;
+  }
+  const segs = [
+    { cls: 'lid',  v: parts.LID,  lbl: 'LID'   },
+    { cls: 'mid',  v: parts.MID,  lbl: '중수'  },
+    { cls: 'rain', v: parts.RAIN, lbl: '빗물'  },
+    { cls: 'nbs',  v: parts.NBS,  lbl: 'NbS'   },
+  ];
+  bar.innerHTML = segs.filter(s => s.v > 0).map(s => {
+    const showLbl = (s.v / total) > 0.08;
+    return `<div class="seg ${s.cls}" style="flex:${s.v}" title="${s.lbl} ${s.v.toLocaleString()} m³">${showLbl ? s.lbl : ''}</div>`;
+  }).join('');
+}
+
+// ───── TOP 5 환원량 랭킹 ─────
+function updateTop5() {
+  const ranked = DATA.buildings
+    .map(b => ({ name: b.name, rep: b.scenarios[CURRENT_SCEN].replenish, b }))
+    .filter(x => x.rep > 0)
+    .sort((a, b) => b.rep - a.rep)
+    .slice(0, 5);
+  const list = document.getElementById('top5-list');
+  if (!ranked.length) {
+    list.innerHTML = '<div style="color:#94A3B8;font-size:11px;padding:4px;">환원량 0 (현황 시나리오)</div>';
+    return;
+  }
+  const maxRep = ranked[0].rep;
+  list.innerHTML = ranked.map((r, i) => `
+    <div class="top5-item" data-bno="${r.b.no}">
+      <span class="top5-rank">${i + 1}</span>
+      <span class="top5-name">${r.name}</span>
+      <span class="top5-bar"><span class="top5-bar-fill" style="width:${(r.rep / maxRep) * 100}%"></span></span>
+      <span class="top5-val">${r.rep.toLocaleString()}</span>
+    </div>
+  `).join('');
+  list.querySelectorAll('.top5-item').forEach(el => {
+    el.onclick = (ev) => {
+      ev.stopPropagation();
+      const b = DATA.buildings.find(x => String(x.no) === el.dataset.bno);
+      if (b) showPopup(b, window.innerWidth / 2 - 160, 100);
+    };
+  });
+}
+
+// ───── 인터랙션: 호버 + 클릭 ─────
+const tooltip = document.getElementById('tooltip');
+const popup = document.getElementById('popup');
+
+window.addEventListener('mousemove', (e) => {
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(buildingGroup.children);
+
+  // 호버 처리
+  if (hovered && (!hits.length || hits[0].object !== hovered)) {
+    hovered.material.color.setHex(hovered.userData.baseColor);
+    hovered = null;
+    tooltip.style.display = 'none';
+    document.body.style.cursor = '';
+  }
+  if (hits.length) {
+    const m = hits[0].object;
+    if (hovered !== m) {
+      hovered = m;
+      m.material.color.setHex(0xFFFFFF);
+      document.body.style.cursor = 'pointer';
+    }
+    const b = m.userData.building;
+    const rate = b.scenarios[CURRENT_SCEN].rate;
+    tooltip.style.display = 'block';
+    tooltip.style.left = (e.clientX + 14) + 'px';
+    tooltip.style.top = (e.clientY + 14) + 'px';
+    tooltip.innerHTML = `<b>${b.name}</b> · 환원율 ${rate.toFixed(1)}%`;
+  }
+});
+
+window.addEventListener('click', (e) => {
+  // 팝업 또는 UI 요소(버튼·KPI 등) 클릭은 raycaster 무시
+  if (e.target.closest('.popup, .scenarios, .kpi, .header, .legend, .top5, .panel, button')) return;
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(buildingGroup.children);
+  if (hits.length) {
+    const b = hits[0].object.userData.building;
+    showPopup(b, e.clientX, e.clientY);
+  }
+});
+
+function showPopup(b, x, y) {
+  const sc = b.scenarios[CURRENT_SCEN];
+  document.getElementById('p-name').textContent = b.name;
+  document.getElementById('p-meta').textContent =
+    `${b.use_type}  ·  No. ${b.no}  ·  ${SCEN_LABELS[CURRENT_SCEN]}`;
+  document.getElementById('p-rate').textContent = sc.rate.toFixed(1);
+  document.getElementById('p-usage').textContent = b.usage.toLocaleString() + ' m³/년';
+  document.getElementById('p-replenish').textContent = sc.replenish.toLocaleString() + ' m³/년';
+  document.getElementById('p-area').textContent = b.area.toLocaleString() + ' m²';
+  document.getElementById('p-floors').textContent = `지상 ${b.floors} / 지하 ${b.basement}`;
+
+  // 포함 시설(tenants) — 카페·식당 등 부모 건물 안에 통합된 자식
+  const tenantsEl = document.getElementById('p-tenants');
+  if (b.tenants && b.tenants.length) {
+    const parentUsage = b.usage - b.tenants.reduce((s,t) => s+t.usage, 0);
+    let html = `<b style="color:#065A82;">포함 시설</b><br>`;
+    html += `<div style="display:flex; justify-content:space-between; padding:2px 0;"><span>· ${b.name} (본관)</span><span><b>${parentUsage.toLocaleString()}</b> m³/년</span></div>`;
+    for (const t of b.tenants) {
+      html += `<div style="display:flex; justify-content:space-between; padding:2px 0;"><span>· ${t.name}</span><span><b>${t.usage.toLocaleString()}</b> m³/년</span></div>`;
+    }
+    tenantsEl.innerHTML = html;
+    tenantsEl.style.display = 'block';
+  } else {
+    tenantsEl.style.display = 'none';
+  }
+
+  const parts = sc.parts;
+  document.getElementById('p-parts').innerHTML =
+    `<b>환원량 분해</b><br>` +
+    `LID ${parts.LID.toLocaleString()} m³ &nbsp; · &nbsp; ` +
+    `중수도 ${parts.MID.toLocaleString()} m³<br>` +
+    `빗물 ${parts.RAIN.toLocaleString()} m³ &nbsp; · &nbsp; ` +
+    `NbS ${parts.NBS.toLocaleString()} m³`;
+
+  // 위치 (화면 안쪽으로)
+  const w = 320, h = 360;
+  let px = x + 18, py = y - 10;
+  if (px + w > window.innerWidth) px = x - w - 18;
+  if (py + h > window.innerHeight) py = window.innerHeight - h - 20;
+  if (py < 80) py = 80;
+  popup.style.left = px + 'px';
+  popup.style.top = py + 'px';
+  popup.style.display = 'block';
+}
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// 애니메이션
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  // 환원량 물기둥 부드러운 lerp 트랜지션
+  for (let i = 0; i < waterColumns.length; i++) {
+    const u = waterColumns[i].userData;
+    u.currentH += (u.targetH - u.currentH) * 0.08;
+    waterColumns[i].scale.y = Math.max(0.001, u.currentH);
+  }
+  // 구름 천천히 흐름
+  for (let i = 0; i < clouds.length; i++) {
+    clouds[i].position.x += clouds[i].userData.drift;
+    if (clouds[i].position.x > 700) clouds[i].position.x = -700;
+  }
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>
